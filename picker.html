@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Бюджет — приєднатися до спільного бюджету</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #222; }
+  h1 { font-size: 1.4rem; }
+  button, a.btn { display: block; width: 100%; box-sizing: border-box; padding: .9rem; margin: 1rem 0; font-size: 1rem;
+    border: 0; border-radius: .6rem; background: #1a5fb4; color: #fff; text-align: center; text-decoration: none; }
+  button:disabled { background: #999; }
+  #status { color: #555; }
+  .error { color: #b00020; }
+</style>
+<!--
+  Сторінка для застосунку «Бюджет» (ТЗ, розділ 10, варіант A).
+  Учасник вибирає таблицю спільного бюджету у вікні Google Picker. Через setAppId вибір дає
+  застосунку (той самий Google Cloud проєкт) доступ до цієї таблиці зі скоупом drive.file.
+  Потім сторінка повертає людину в застосунок посиланням budget://join?sheet=<id>.
+  Сторінка нічого не зберігає й нікуди не надсилає, крім Google.
+-->
+</head>
+<body>
+<h1>Приєднатися до спільного бюджету</h1>
+<p>Натисніть кнопку, увійдіть тим самим Google-акаунтом, що й у застосунку, і виберіть таблицю <b>«Бюджет — …»</b>, якою з вами поділилися.</p>
+<button id="pick" disabled>Вибрати таблицю бюджету</button>
+<p id="status">Завантаження…</p>
+<a id="back" class="btn" style="display:none">Повернутися в застосунок</a>
+
+<script>
+  const CLIENT_ID = '873325229148-fqhdh7f6srtjj680ga6blk455vqefi7v.apps.googleusercontent.com';
+  const API_KEY = 'AIzaSyC8XkPnr8DErWfeTacZ8y7ptksCCcLy2QE'; // обмежений сайтом lonsdale1488.github.io і Picker API
+  const APP_ID = '873325229148'; // номер Google Cloud проєкту
+  const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+
+  const hint = new URLSearchParams(location.search).get('hint') || '';
+  const statusEl = document.getElementById('status');
+  const pickBtn = document.getElementById('pick');
+  const backLink = document.getElementById('back');
+  let tokenClient = null;
+  let pickerReady = false;
+
+  function status(text, isError) {
+    statusEl.textContent = text;
+    statusEl.className = isError ? 'error' : '';
+  }
+
+  function ready() {
+    if (tokenClient && pickerReady) {
+      pickBtn.disabled = false;
+      status(hint ? 'Акаунт: ' + hint : '');
+    }
+  }
+
+  function onGis() {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPE,
+      login_hint: hint,
+      callback: (resp) => {
+        if (resp.error) { status('Не вдалося увійти: ' + resp.error, true); return; }
+        showPicker(resp.access_token);
+      },
+    });
+    ready();
+  }
+
+  function onGapi() {
+    gapi.load('picker', () => { pickerReady = true; ready(); });
+  }
+
+  function showPicker(token) {
+    const shared = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+      .setOwnedByMe(false)
+      .setMode(google.picker.DocsViewMode.LIST);
+    const all = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+      .setMode(google.picker.DocsViewMode.LIST);
+    new google.picker.PickerBuilder()
+      .setTitle('Оберіть таблицю «Бюджет — …»')
+      .setLocale('uk')
+      .addView(shared)
+      .addView(all)
+      .setOAuthToken(token)
+      .setDeveloperKey(API_KEY)
+      .setAppId(APP_ID)
+      .setCallback(onPicked)
+      .build()
+      .setVisible(true);
+  }
+
+  function onPicked(data) {
+    if (data.action !== google.picker.Action.PICKED) return;
+    const id = data.docs[0].id;
+    const name = data.docs[0].name || '';
+    if (!name.startsWith('Бюджет')) {
+      status('Це не таблиця застосунку «Бюджет». Виберіть таблицю «Бюджет — …».', true);
+      return;
+    }
+    const link = 'intent://join?sheet=' + encodeURIComponent(id) + '#Intent;scheme=budget;package=ua.budget;end';
+    backLink.href = link;
+    backLink.style.display = 'block';
+    pickBtn.style.display = 'none';
+    status('Вибрано: ' + name + '. Натисніть «Повернутися в застосунок».');
+    location.href = link;
+  }
+
+  pickBtn.addEventListener('click', () => tokenClient.requestAccessToken({ prompt: '' }));
+</script>
+<script async defer src="https://accounts.google.com/gsi/client" onload="onGis()"></script>
+<script async defer src="https://apis.google.com/js/api.js" onload="onGapi()"></script>
+</body>
+</html>
